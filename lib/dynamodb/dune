@@ -1,0 +1,24 @@
+(env
+ (dev
+  (flags
+   (:standard -warn-error -A))))
+
+(library
+ (name        dynamodb)
+ (preprocess
+  (pps ppx_deriving_yojson ppx_deriving.make))
+ (libraries eio
+            eio_main
+            cohttp-eio
+            calendar
+            digestif
+            base64
+            uri
+            str
+            tls-eio
+            mirage-crypto-rng-eio
+            yojson
+            ppx_deriving
+            ppx_deriving_yojson.runtime
+            xlist)
+ (synopsis ""))
