@@ -31,7 +31,7 @@ let default_config =
 let tls_config =
   Tls.Config.client ~authenticator:(fun ?ip:_ ~host:_ _certs -> Ok None) ()
 
-let run env ?(config : config option) f request =
+let run env ?(config : config option) f =
   let config =
     match config with
     | Some v -> v
@@ -56,7 +56,7 @@ let run env ?(config : config option) f request =
           |> Domain_name.host |> Result.to_option)
         conn
     in
-    f conn config' request
+    f conn config'
 
 let run2 ?config f request =
   Eio_main.run @@ fun env -> run env ?config f request

@@ -190,14 +190,12 @@ module Api : sig
 
   val run :
        < clock : Eio.Time.clock
-       ; fs : #Eio.Fs.dir Eio.Path.t
        ; net : #Eio.Net.t
        ; secure_random : Eio.Flow.source
        ; .. >
     -> ?config:config
-    -> (Tls_eio.t -> config' -> 'a -> 'b)
+    -> (Tls_eio.t -> config' -> 'a)
     -> 'a
-    -> 'b
 
   val run2 : ?config:config -> (Tls_eio.t -> config' -> 'a -> 'b) -> 'a -> 'b
 

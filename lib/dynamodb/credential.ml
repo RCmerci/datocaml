@@ -27,10 +27,10 @@ let secret_key =
   *> line
 
 let one_profile =
-  let* name = profile_name in
-  let* access = access_key in
-  let+ secret = secret_key in
-  (name, (access, secret))
+  let* profile_name in
+  let* access_key in
+  let+ secret_key in
+  (profile_name, (access_key, secret_key))
 
 let kvs =
   seq
@@ -42,9 +42,9 @@ let kvs =
      (k, v))
 
 let one_config =
-  let* name = profile_name in
-  let+ kvs = kvs in
-  (name, List.of_seq kvs)
+  let* profile_name in
+  let+ kvs in
+  (profile_name, List.of_seq kvs)
 
 let get_credential ?(which = "default") env =
   let home_dir = Unix.getenv "HOME" in
