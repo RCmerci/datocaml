@@ -1,6 +1,6 @@
-let ( let+ ) t f = Result.map f t
-
-let ( let* ) t f = Result.bind t f
+open Coll
+module ResultMonad = Xresult.MonadMake (String)
+open ResultMonad.O
 
 type attr_value_B = Base64EncodedS of string
 
@@ -308,6 +308,12 @@ let partition_batch_write_item_request_raw ?(n = 25) { request_items } :
            (fun l -> { request_items = [ (table, l) ] })
            (Xlist.partition_all_by_n l n))
        request_items
+
+type batch_write_item_response =
+  { consumed_capacity : consumed_capacity option
+        [@key "ConsumedCapacity"] [@default None]
+  }
+[@@deriving of_yojson { strict = false }]
 
 type update_item_request =
   { table_name : string [@key "TableName"]

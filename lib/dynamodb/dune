@@ -20,5 +20,5 @@
             yojson
             ppx_deriving
             ppx_deriving_yojson.runtime
-            xlist)
+            coll)
  (synopsis ""))

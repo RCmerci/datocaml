@@ -1,0 +1,6 @@
+(library
+ (name        datom_db)
+ (preprocess
+  (pps ppx_deriving.ord ppx_deriving.show))
+ (libraries   nanoid nanoid.os dynamodb coll ppx_deriving)
+ (synopsis ""))

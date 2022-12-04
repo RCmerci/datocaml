@@ -1,0 +1,4 @@
+(library
+ (name        monad)
+ (libraries   )
+ (synopsis ""))

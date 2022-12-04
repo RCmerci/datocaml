@@ -59,7 +59,8 @@ let run env ?(config : config option) f =
     f conn config'
 
 let run2 ?config f request =
-  Eio_main.run @@ fun env -> run env ?config f request
+  Eio_main.run @@ fun env ->
+  run env ?config @@ fun env config -> f env config request
 
 let call_api conn config api_name request =
   let uri = Uri.of_string @@ "https://" ^ config.hostname ^ "/" in
@@ -67,6 +68,7 @@ let call_api conn config api_name request =
   let headers =
     [ ("Host", config.hostname)
     ; ("Accept-Encoding", "identity")
+    ; ("Connection", "Keep-Alive")
     ; ("Content-Type", "application/x-amz-json-1.0")
     ; ("X-Amz-Target", api_name)
     ; ("Content-Length", string_of_int @@ String.length body)
@@ -117,11 +119,20 @@ let batch_write_item conn config request =
     request |> Type.batch_write_item_request_to_raw
     |> Type.partition_batch_write_item_request_raw ~n:25
   in
-  List.map
-    (fun request ->
-      call_api conn config "DynamoDB_20120810.BatchWriteItem"
-        (Type.Batch_write_item request))
-    requests
+  let module X = Coll.Xlist.Fold_left_with_stop (struct
+    type t = (Type.batch_write_item_response list, Yojson.Safe.t) result
+  end) in
+  X.fold_left_with_stop
+    (fun acc request ->
+      let json =
+        call_api conn config "DynamoDB_20120810.BatchWriteItem"
+          (Type.Batch_write_item request)
+      in
+      match (Type.batch_write_item_response_of_yojson json, acc) with
+      | Ok v, Ok acc' -> Ok (v :: acc')
+      | Error _, _ -> X.stop @@ Error json
+      | _ -> failwith "unreachable")
+    (Ok []) requests
 
 let update_item conn config request =
   let json =
@@ -175,11 +186,49 @@ let query_request : Type.query_request =
   { table_name = "file-sync-s3-object-metadata"
   ; key_condition_expression = "#k1=:v1"
   ; expression_attribute_names = Some [ ("#k1", "user-uuid+graph-uuid") ]
-  ; expression_attribute_values = Some [ (":v1", S "test") ]
+  ; expression_attribute_values =
+      Some
+        [ ( ":v1"
+          , S
+              "61360eff-726c-4804-9bba-5ed07bd671a2bd62b376-0cab-430e-a29f-8f36edf4528b"
+          )
+        ]
   ; filter_expression = None
-  ; limit = Some 1
+  ; limit = None
   ; consistent_read = None
   ; index_name = None
   ; exclusive_start_key = None
-  ; return_consumed_capacity = None
+  ; return_consumed_capacity = Some Type.INDEXES
   }
+
+let run3 env ?(config : config option) f =
+  let config =
+    match config with
+    | Some v -> v
+    | None -> Lazy.force default_config
+  in
+  Mirage_crypto_rng_eio.run (module Mirage_crypto_rng.Fortuna) env @@ fun () ->
+  match Endpoints.endpoint_of "dynamodb" config.region with
+  | None -> failwith "not found endpoint"
+  | Some hostname ->
+    let config' =
+      { region = config.region
+      ; access_key = config.access_key
+      ; secret_key = config.secret_key
+      ; hostname
+      }
+    in
+    Net.with_tcp_connect ~host:hostname ~service:"https" env#net @@ fun conn' ->
+    let conn =
+      Tls_eio.client_of_flow tls_config
+        ?host:
+          (Domain_name.of_string_exn hostname
+          |> Domain_name.host |> Result.to_option)
+        conn'
+    in
+    Time.sleep env#clock 100.;
+    f conn config'
+
+let f () =
+  Eio_main.run @@ fun env ->
+  run3 env (fun conn config -> list_tables conn config ())

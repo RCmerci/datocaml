@@ -1,11 +1,29 @@
 include List
 open Effect
 
-module type Acc_t = sig
-  type t
+module MonadBasic = struct
+  type 'a t = 'a list
+
+  let return x = [ x ]
+
+  let bind l ~f = flatten (map f l)
+
+  let map l ~f = map f l
 end
 
-module Fold_left_with_stop (Acc : Acc_t) = struct
+module Monad = Monad.Make (MonadBasic)
+
+module type Fold_left_with_stop_S = sig
+  type acc_t
+
+  val stop : acc_t -> 'a
+
+  val fold_left_with_stop : (acc_t -> 'a -> acc_t) -> acc_t -> 'a list -> acc_t
+end
+
+module Fold_left_with_stop (Acc : sig
+  type t
+end) : Fold_left_with_stop_S with type acc_t = Acc.t = struct
   type acc_t = Acc.t
 
   type _ Effect.t += Stop : acc_t -> 'a Effect.t
@@ -29,7 +47,9 @@ let rec partition_by_n r l n =
     | [] -> (List.rev r, [])
     | x :: xs -> partition_by_n (x :: r) xs (n - 1)
 
-let partition_by_n l = partition_by_n [] l
+let partition_by_n l n =
+  assert (n > 0);
+  partition_by_n [] l n
 
 let rec partition_all_by_n r l n =
   if length l = 0 then rev r

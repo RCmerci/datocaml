@@ -140,6 +140,9 @@ module Type : sig
   type batch_write_item_request =
     (string * batch_write_item_request_request_items) list
 
+  type batch_write_item_response =
+    { consumed_capacity : consumed_capacity option }
+
   type update_item_request =
     { table_name : string
     ; key : prim_and_range_key
@@ -218,7 +221,10 @@ module Api : sig
     -> (Type.query_response, Yojson.Safe.t) result
 
   val batch_write_item :
-    Tls_eio.t -> config' -> Type.batch_write_item_request -> Yojson.Safe.t list
+       Tls_eio.t
+    -> config'
+    -> Type.batch_write_item_request
+    -> (Type.batch_write_item_response list, Yojson.Safe.t) result
 
   val update_item :
        Tls_eio.t
