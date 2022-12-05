@@ -1,6 +1,11 @@
+(env
+ (dev
+  (flags
+   (:standard -warn-error -A))))
+
 (library
  (name        datom_db)
  (preprocess
-  (pps ppx_deriving.ord ppx_deriving.show))
+  (pps ppx_deriving.ord ppx_deriving.show ppx_deriving.eq))
  (libraries   nanoid nanoid.os dynamodb coll ppx_deriving)
  (synopsis ""))

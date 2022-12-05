@@ -38,13 +38,56 @@ let get_item request state =
   update_consumed_capacity state resp.consumed_capacity;
   resp
 
-let query request state =
-  let+ resp =
+let rec query request state =
+  let* resp =
     run state.env ?config:state.config (fun conn config ->
-        query conn config request)
+        Api.query conn config request)
   in
-  update_consumed_capacity state resp.consumed_capacity;
-  resp
+  match resp.last_evaluated_key with
+  | None -> ResultO.return resp
+  | Some v ->
+    let* (resp' : Type.query_response) =
+      query { request with exclusive_start_key = Some v } state
+    in
+    let consumed_capacity : Type.consumed_capacity option =
+      match (resp.consumed_capacity, resp'.consumed_capacity) with
+      | Some v1, Some v2 ->
+        let capacity_units =
+          match (v1.capacity_units, v2.capacity_units) with
+          | Some capacity_units1, Some capacity_units2 ->
+            Some (capacity_units1 +. capacity_units2)
+          | _ -> None
+        in
+        let table_name = v1.table_name in
+        let read_capacity_units =
+          match (v1.read_capacity_units, v2.read_capacity_units) with
+          | Some read_capacity_units1, Some read_capacity_units2 ->
+            Some (read_capacity_units1 +. read_capacity_units2)
+          | _ -> None
+        in
+        let write_capacity_units =
+          match (v1.write_capacity_units, v2.write_capacity_units) with
+          | Some write_capacity_units1, Some write_capacity_units2 ->
+            Some (write_capacity_units1 +. write_capacity_units2)
+          | _ -> None
+        in
+        Some
+          { capacity_units
+          ; table_name
+          ; read_capacity_units
+          ; write_capacity_units
+          }
+      | _ -> None
+    in
+    update_consumed_capacity state consumed_capacity;
+    ResultO.return
+      ({ consumed_capacity
+       ; count = resp.count + resp'.count
+       ; items = List.concat [ resp.items; resp'.items ]
+       ; last_evaluated_key = None
+       ; scanned_count = resp.scanned_count + resp'.scanned_count
+       }
+        : Type.query_response)
 
 let batch_write_item request state =
   let+ resp =

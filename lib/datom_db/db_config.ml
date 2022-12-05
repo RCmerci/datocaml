@@ -15,7 +15,38 @@ type rschema = AttrSet.t SchemaMap.t
 type t =
   { schema : schema
   ; rschema : rschema
+  ; table_name : string
   }
+
+let table1 t = t.table_name ^ "_1"
+
+let table1_partition_key = "tenant+e"
+
+let table1_range_key = "a"
+
+let table1_normal_key1 = "v"
+
+let table2 t = t.table_name ^ "_2"
+
+let table2_partition_key = "tenant+a"
+
+let table2_range_key = "e"
+
+let table2_normal_key1 = "v"
+
+let table3 t = t.table_name ^ "_3"
+
+let table3_partition_key = "tenant+a+v"
+
+let table3_range_key = "e"
+
+let table4 t = t.table_name ^ "_4"
+
+let table4_partition_key = "tenant+a"
+
+let table4_range_key = "v"
+
+let table4_normal_key1 = "e"
 
 let is_schema_type tp t attr =
   match SchemaMap.find_opt tp t.rschema with
