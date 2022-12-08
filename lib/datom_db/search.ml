@@ -7,42 +7,32 @@ normal-key: value
 partition-key: tenant#attr
 range-key: eid
 normal-key: value
-- table3 (when attr-value is not :unique)
-partition-key: tenant#attr#VALUE-TYPE#value
-range-key: eid
-- table4 (when attr-value is :unique)
+- table3
 partition-key: tenant#attr
-range-key: value
-normal-key: eid
+range-key: N#num-value#eid, S#STR-LENGTH#str-value#eid
 
 search
 - e -> table1
 - ea -> table1
 - eav -> table1
 - a -> table2
-- av ->
-   1. when attr is :unique -> table4
-   2. when value is small -> table3
-   3. when value is huge -> table2
+- av -> table3
 
  *)
 open Coll
 open Dynamodb
 open Io.Monad.O
-
-module ResultO = Xresult.MonadMake (struct
-  type t = Yojson.Safe.t
-end)
+module ResultO = Xresult.MonadMake (String)
 
 type pattern =
-  | E of string
-  | EA of (string * Attr.t)
-  | EAV of (string * Attr.t * Value.t)
-  | A of Attr.t
-  | AV of (Attr.t * Value.t)
+  | E : string -> pattern
+  | EA : string * Datom.attr -> pattern
+  | EAV : string * Datom.attr * (_, _) Datom.value -> pattern
+  | A : Datom.attr -> pattern
+  | AV : Datom.attr * (_, _) Datom.value -> pattern
 
-let rec search (db_config : Db_config.t) tenant pattern :
-    Datom.t list ResultO.t Io.t =
+let rec search (db_config : Db_config.t) tenant (pattern : pattern) :
+    (Datom.resolved, Datom.from_db_item_true) Datom.t list ResultO.t Io.t =
   match pattern with
   | E e ->
     let table_name = Db_config.table1 db_config in
@@ -57,7 +47,7 @@ let rec search (db_config : Db_config.t) tenant pattern :
     in
     let open ResultO.O in
     let+ r in
-    List.map Datom.from_table1_item r.items
+    List.map (Datom.from_table1_item db_config) r.items
   | EA (e, a) ->
     let table_name = Db_config.table1 db_config in
     let partition_key = Type.S (tenant ^ "#" ^ e) in
@@ -74,13 +64,19 @@ let rec search (db_config : Db_config.t) tenant pattern :
     in
     let open ResultO.O in
     let+ r in
-    [ Datom.from_table1_item r.item ]
+    [ Datom.from_table1_item db_config r.item ]
   | EAV (e, a, v) -> (
     let+ r = search db_config tenant (EA (e, a)) in
     let open ResultO.O in
     let+ r in
     match r with
-    | [ (_, _, _, v') ] -> if Value.equal v' v then r else []
+    | [ Datom.T_from_db_item (_, _, _, v') ] -> (
+      match (v', v) with
+      | Datom.N n', Datom.N n -> if n' = n then r else []
+      | Datom.S s', Datom.S s -> if s' = s then r else []
+      | Datom.Ref_value (Datom.Id e'), Datom.Ref_value (Datom.Id e) ->
+        if e' = e then r else []
+      | _ -> [])
     | _ -> failwith "unreachable")
   | A a ->
     let table_name = Db_config.table2 db_config in
@@ -95,46 +91,49 @@ let rec search (db_config : Db_config.t) tenant pattern :
     in
     let open ResultO.O in
     let+ r in
-    List.map Datom.from_table2_item r.items
+    List.map (Datom.from_table2_item db_config) r.items
   | AV (a, v) ->
-    let is_unique = Db_config.is_attr_unique db_config a in
-    let table_name, partition_key, partition_key_name =
-      if is_unique then
-        ( Db_config.table4 db_config
-        , Type.S (tenant ^ "#" ^ a)
-        , Db_config.table4_partition_key )
-      else
-        let v_str =
-          match v with
-          | Value.N n -> "N#" ^ string_of_float n
-          | Value.S s -> "S#" ^ s
-        in
-        ( Db_config.table3 db_config
-        , Type.S (tenant ^ "#" ^ a ^ "#" ^ v_str)
-        , Db_config.table3_partition_key )
+    let table_name = Db_config.table3 db_config in
+    let partition_key = Type.S (tenant ^ "#" ^ a) in
+    let partition_key_name = Db_config.table3_partition_key in
+    let range_key_name = Db_config.table3_range_key in
+    let range_key =
+      Type.S
+        (match v with
+        | Datom.N n -> Datom.table3_range_key_num_for_query n
+        | Datom.S s -> Datom.table3_range_key_str_for_query s
+        | Datom.Ref_value (Datom.Id e) -> Datom.table3_range_key_str_for_query e)
     in
-    if is_unique then
-      let+ r =
-        Io.get_item
-        @@ Type.make_get_item_request ~table_name
-             ~key:
-               (Type.make_prim_and_range_key
-                  ~primary_key:(partition_key_name, partition_key)
-                  ~range_key:(Db_config.table4_range_key, Value.to_attr_value v)
-                  ())
-             ~return_consumed_capacity:Type.TOTAL ()
-      in
-      let open ResultO.O in
-      let+ r in
-      [ Datom.from_table4_item r.item ]
+    let q =
+      Type.make_query_request ~table_name
+        ~key_condition_expression:"#k1=:v1 and begins_with(#k2,:v2)"
+        ~expression_attribute_names:
+          [ ("#k1", partition_key_name); ("#k2", range_key_name) ]
+        ~expression_attribute_values:
+          [ (":v1", partition_key); (":v2", range_key) ]
+        ~return_consumed_capacity:Type.TOTAL ()
+    in
+    let+ r = Io.query q in
+    Eio.traceln ~__POS__ "query: %a" Yojson.Safe.pp
+      (Type.query_request_to_yojson q);
+    let open ResultO.O in
+    let+ r in
+    List.map (Datom.from_table3_item db_config) r.items
+
+let ensure_eid (type a) (eid : a Datom.eid) tenant (db_config : Db_config.t) :
+    (string, string) result Io.t =
+  match eid with
+  | Datom.Id s -> Io.Monad.return (Ok s)
+  | Datom.Ref (k, v) -> (
+    if not (Db_config.is_attr_unique db_config k) then
+      Io.Monad.return
+      @@ Error
+           (Printf.sprintf "Lookup ref attribute should be marked as Unique: %s"
+              (Datom.show_eid eid))
     else
-      let+ r =
-        Io.query
-        @@ Type.make_query_request ~table_name ~key_condition_expression:"#k=:v"
-             ~expression_attribute_names:[ ("#k", partition_key_name) ]
-             ~expression_attribute_values:[ (":v", partition_key) ]
-             ~return_consumed_capacity:Type.TOTAL ()
-      in
+      let+ r = search db_config tenant (AV (k, v)) in
       let open ResultO.O in
-      let+ r in
-      List.map Datom.from_table3_item r.items
+      let* r in
+      match r with
+      | [ Datom.T_from_db_item (_, Datom.Id e, _, _) ] -> Ok e
+      | _ -> Error "ensure_eid")

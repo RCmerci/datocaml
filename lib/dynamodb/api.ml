@@ -96,7 +96,7 @@ let list_tables conn config _request =
   in
   match Type.list_tables_response_of_yojson json with
   | Ok v -> Ok v
-  | Error _ -> Error json
+  | Error _ -> Error (Yojson.Safe.to_string json)
 
 let get_item conn config request =
   let json =
@@ -104,7 +104,7 @@ let get_item conn config request =
   in
   match Type.get_item_response_of_yojson json with
   | Ok v -> Ok v
-  | Error _ -> Error json
+  | Error _ -> Error (Yojson.Safe.to_string json)
 
 let query conn config request =
   let json =
@@ -112,7 +112,7 @@ let query conn config request =
   in
   match Type.query_response_of_yojson json with
   | Ok v -> Ok v
-  | Error _ -> Error json
+  | Error _ -> Error (Yojson.Safe.to_string json)
 
 let batch_write_item conn config request =
   let requests =
@@ -120,7 +120,7 @@ let batch_write_item conn config request =
     |> Type.partition_batch_write_item_request_raw ~n:25
   in
   let module X = Coll.Xlist.Fold_left_with_stop (struct
-    type t = (Type.batch_write_item_response list, Yojson.Safe.t) result
+    type t = (Type.batch_write_item_response list, string) result
   end) in
   X.fold_left_with_stop
     (fun acc request ->
@@ -130,7 +130,7 @@ let batch_write_item conn config request =
       in
       match (Type.batch_write_item_response_of_yojson json, acc) with
       | Ok v, Ok acc' -> Ok (v :: acc')
-      | Error _, _ -> X.stop @@ Error json
+      | Error _, _ -> X.stop @@ Error (Yojson.Safe.to_string json)
       | _ -> failwith "unreachable")
     (Ok []) requests
 
@@ -141,7 +141,7 @@ let update_item conn config request =
   in
   match Type.update_item_response_of_yojson json with
   | Ok v -> Ok v
-  | Error _ -> Error json
+  | Error _ -> Error (Yojson.Safe.to_string json)
 
 (* test *)
 
@@ -159,11 +159,11 @@ let batch_write_item_request : Type.batch_write_item_request =
   [ ( "file-sync-s3-object-metadata"
     , Put
         [ [ ("user-uuid+graph-uuid", S "test")
-          ; ("s3-key", S "test2")
+          ; ("s3-key", S "000123#tenant")
           ; ("attr1", S "attr11")
           ]
         ; [ ("user-uuid+graph-uuid", S "test")
-          ; ("s3-key", S "test3")
+          ; ("s3-key", S "000001#tenant2")
           ; ("attr1", S "attr111")
           ]
         ] )
@@ -184,15 +184,12 @@ let batch_write_item_request_raw : Type.batch_write_item_request_raw =
 
 let query_request : Type.query_request =
   { table_name = "file-sync-s3-object-metadata"
-  ; key_condition_expression = "#k1=:v1"
-  ; expression_attribute_names = Some [ ("#k1", "user-uuid+graph-uuid") ]
+  ; key_condition_expression = "#k1=:v1 and #k2 between :v21 and :v22"
+  ; expression_attribute_names =
+      Some [ ("#k1", "user-uuid+graph-uuid"); ("#k2", "s3-key") ]
   ; expression_attribute_values =
       Some
-        [ ( ":v1"
-          , S
-              "61360eff-726c-4804-9bba-5ed07bd671a2bd62b376-0cab-430e-a29f-8f36edf4528b"
-          )
-        ]
+        [ (":v1", S "test"); (":v21", S "000123#"); (":v22", S "000123#uuuuu") ]
   ; filter_expression = None
   ; limit = None
   ; consistent_read = None

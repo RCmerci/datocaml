@@ -4,10 +4,7 @@ open Dynamodb.Api
 
 type state =
   { mutable consumed_capacity : float
-  ; env :
-      < clock : Eio.Time.clock
-      ; net : Eio.Net.t
-      ; secure_random : Eio.Flow.source >
+  ; env : Eio.Stdenv.t
   ; config : Api.config option
   }
 
@@ -15,7 +12,7 @@ type 'a t = state -> 'a
 
 type 'a io = 'a t
 
-module ResultO = Xresult.MonadMake (Yojson.Safe)
+module ResultO = Xresult.MonadMake (String)
 open ResultO.O
 
 let update_consumed_capacity state
@@ -107,6 +104,8 @@ let update_item request state =
   in
   update_consumed_capacity state resp.consumed_capacity;
   resp
+
+let run state t = t state
 
 module MonadBasic = struct
   type 'a t = 'a io

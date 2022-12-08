@@ -106,6 +106,8 @@ module Type : sig
     ; return_consumed_capacity : return_consumed_capacity option
     }
 
+  val query_request_to_yojson : query_request -> Yojson.Safe.t
+
   val make_query_request :
        table_name:string
     -> key_condition_expression:string
@@ -203,32 +205,29 @@ module Api : sig
   val run2 : ?config:config -> (Tls_eio.t -> config' -> 'a -> 'b) -> 'a -> 'b
 
   val list_tables :
-       Tls_eio.t
-    -> config'
-    -> 'a
-    -> (Type.list_tables_response, Yojson.Safe.t) result
+    Tls_eio.t -> config' -> 'a -> (Type.list_tables_response, string) result
 
   val get_item :
        Tls_eio.t
     -> config'
     -> Type.get_item_request
-    -> (Type.get_item_response, Yojson.Safe.t) result
+    -> (Type.get_item_response, string) result
 
   val query :
        Tls_eio.t
     -> config'
     -> Type.query_request
-    -> (Type.query_response, Yojson.Safe.t) result
+    -> (Type.query_response, string) result
 
   val batch_write_item :
        Tls_eio.t
     -> config'
     -> Type.batch_write_item_request
-    -> (Type.batch_write_item_response list, Yojson.Safe.t) result
+    -> (Type.batch_write_item_response list, string) result
 
   val update_item :
        Tls_eio.t
     -> config'
     -> Type.update_item_request
-    -> (Type.update_item_response, Yojson.Safe.t) result
+    -> (Type.update_item_response, string) result
 end

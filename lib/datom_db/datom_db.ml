@@ -1,4 +1,8 @@
 (*
+schema type:
+- :unique
+- :ref-value
+
 - table1
 partition-key: tenant#eid
 range-key: attr
@@ -7,19 +11,14 @@ normal-key: value
 partition-key: tenant#attr
 range-key: eid
 normal-key: value
-- table3 (when attr-value is not :unique)
-partition-key: tenant#attr#value
-range-key: eid
-- table4 (when attr-value is :unique)
+- table3
 partition-key: tenant#attr
-range-key: value
-normal-key: eid
+range-key: N#num-value#eid, S#STR-LENGTH#str-value#eid
 
-search
+   search
 - e -> table1
 - ea -> table1
 - eav -> table1
 - a -> table2
-- av -> table3 or table4
-
+- av -> table3
  *)
