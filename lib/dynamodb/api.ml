@@ -145,6 +145,13 @@ let update_item conn config request =
 
 (* test *)
 
+let get_item_request : Type.get_item_request =
+  Type.make_get_item_request ~table_name:"datocaml_1"
+    ~key:
+      (Type.make_prim_and_range_key ~primary_key:("tenant+e", Type.S "sss")
+         ~range_key:("a", Type.S "yyy") ())
+    ()
+
 let update_item_request : Type.update_item_request =
   Type.make_update_item_request ~table_name:"file-sync-s3-object-metadata"
     ~key:
@@ -195,7 +202,7 @@ let query_request : Type.query_request =
   ; consistent_read = None
   ; index_name = None
   ; exclusive_start_key = None
-  ; return_consumed_capacity = Some Type.INDEXES
+  ; return_consumed_capacity = Some Type.TOTAL
   }
 
 let run3 env ?(config : config option) f =

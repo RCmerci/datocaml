@@ -236,7 +236,7 @@ type get_item_request =
 [@@deriving to_yojson, make]
 
 type get_item_response =
-  { item : item [@key "Item"]
+  { item : item option [@key "Item"] [@default None]
   ; consumed_capacity : consumed_capacity option
         [@key "ConsumedCapacity"] [@default None]
   }

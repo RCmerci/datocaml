@@ -2,6 +2,8 @@ open Coll
 open Dynamodb
 open Dynamodb.Api
 
+let debug = ref false
+
 type state =
   { mutable consumed_capacity : float
   ; env : Eio.Stdenv.t
@@ -41,9 +43,11 @@ let rec query request state =
         Api.query conn config request)
   in
   match resp.last_evaluated_key with
-  | None -> ResultO.return resp
+  | None ->
+    update_consumed_capacity state resp.consumed_capacity;
+    ResultO.return resp
   | Some v ->
-    let* (resp' : Type.query_response) =
+    let+ (resp' : Type.query_response) =
       query { request with exclusive_start_key = Some v } state
     in
     let consumed_capacity : Type.consumed_capacity option =
@@ -77,14 +81,15 @@ let rec query request state =
       | _ -> None
     in
     update_consumed_capacity state consumed_capacity;
-    ResultO.return
-      ({ consumed_capacity
-       ; count = resp.count + resp'.count
-       ; items = List.concat [ resp.items; resp'.items ]
-       ; last_evaluated_key = None
-       ; scanned_count = resp.scanned_count + resp'.scanned_count
-       }
-        : Type.query_response)
+    if !debug then
+      Eio.traceln ~__POS__ "consumed_capacity: %f" state.consumed_capacity;
+    ({ consumed_capacity
+     ; count = resp.count + resp'.count
+     ; items = List.concat [ resp.items; resp'.items ]
+     ; last_evaluated_key = None
+     ; scanned_count = resp.scanned_count + resp'.scanned_count
+     }
+      : Type.query_response)
 
 let batch_write_item request state =
   let+ resp =
@@ -106,6 +111,8 @@ let update_item request state =
   resp
 
 let run state t = t state
+
+let get_consumed_capacity state = state.consumed_capacity
 
 module MonadBasic = struct
   type 'a t = 'a io

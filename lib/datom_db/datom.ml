@@ -146,7 +146,9 @@ let from_table3_item db_config (item : Type.item) : (_, from_db_item_true) t =
           | [ "S"; str_len; tail ] ->
             let str_len = int_of_string str_len in
             let str_v = String.sub tail 0 str_len in
-            let eid = String.sub tail str_len (String.length tail - str_len) in
+            let eid =
+              String.sub tail (str_len + 1) (String.length tail - str_len - 1)
+            in
             { acc with e = Some eid; v = Some (Temp_s str_v) }
           | _ -> failwith @@ Printf.sprintf "bad table3_range_key: %s" v')
         | _ -> failwith @@ Printf.sprintf "bad table3 item: %s" k)

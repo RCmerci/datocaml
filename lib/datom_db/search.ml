@@ -24,6 +24,8 @@ open Dynamodb
 open Io.Monad.O
 module ResultO = Xresult.MonadMake (String)
 
+let debug = ref false
+
 type pattern =
   | E : string -> pattern
   | EA : string * Datom.attr -> pattern
@@ -48,23 +50,28 @@ let rec search (db_config : Db_config.t) tenant (pattern : pattern) :
     let open ResultO.O in
     let+ r in
     List.map (Datom.from_table1_item db_config) r.items
-  | EA (e, a) ->
+  | EA (e, a) -> (
     let table_name = Db_config.table1 db_config in
     let partition_key = Type.S (tenant ^ "#" ^ e) in
     let range_key = Type.S a in
-    let+ r =
-      Io.get_item
-        (Type.make_get_item_request ~table_name
-           ~key:
-             (Type.make_prim_and_range_key
-                ~primary_key:(Db_config.table1_partition_key, partition_key)
-                ~range_key:(Db_config.table1_range_key, range_key)
-                ())
-           ~return_consumed_capacity:Type.TOTAL ())
+    let q =
+      Type.make_get_item_request ~table_name
+        ~key:
+          (Type.make_prim_and_range_key
+             ~primary_key:(Db_config.table1_partition_key, partition_key)
+             ~range_key:(Db_config.table1_range_key, range_key)
+             ())
+        ~return_consumed_capacity:Type.TOTAL ()
     in
+    if !debug then
+      Eio.traceln ~__POS__ "get_item: %a" Yojson.Safe.pp
+        (Type.get_item_request_to_yojson q);
+    let+ r = Io.get_item q in
     let open ResultO.O in
     let+ r in
-    [ Datom.from_table1_item db_config r.item ]
+    match r.item with
+    | None -> []
+    | Some item -> [ Datom.from_table1_item db_config item ])
   | EAV (e, a, v) -> (
     let+ r = search db_config tenant (EA (e, a)) in
     let open ResultO.O in
@@ -113,9 +120,10 @@ let rec search (db_config : Db_config.t) tenant (pattern : pattern) :
           [ (":v1", partition_key); (":v2", range_key) ]
         ~return_consumed_capacity:Type.TOTAL ()
     in
+    if !debug then
+      Eio.traceln ~__POS__ "query: %a" Yojson.Safe.pp
+        (Type.query_request_to_yojson q);
     let+ r = Io.query q in
-    Eio.traceln ~__POS__ "query: %a" Yojson.Safe.pp
-      (Type.query_request_to_yojson q);
     let open ResultO.O in
     let+ r in
     List.map (Datom.from_table3_item db_config) r.items

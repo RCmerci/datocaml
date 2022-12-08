@@ -80,6 +80,8 @@ module Type : sig
     ; return_consumed_capacity : return_consumed_capacity option
     }
 
+  val get_item_request_to_yojson : get_item_request -> Yojson.Safe.t
+
   val make_get_item_request :
        table_name:string
     -> key:prim_and_range_key
@@ -89,7 +91,7 @@ module Type : sig
     -> get_item_request
 
   type get_item_response =
-    { item : item
+    { item : item option
     ; consumed_capacity : consumed_capacity option
     }
 

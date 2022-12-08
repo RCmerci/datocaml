@@ -25,6 +25,8 @@ val update_item :
      Dynamodb.Type.update_item_request
   -> (Dynamodb.Type.update_item_response, string) result t
 
+val get_consumed_capacity : float t
+
 val run : state -> 'a t -> 'a
 
 module Monad : Monad.S with type 'a t = 'a io

@@ -56,12 +56,12 @@ let q () =
   Eio_main.run @@ fun env ->
   let io =
     let open Io.Monad.O in
-    let* a = Search.search test_db_config test_tenant (Search.A "attr-1") in
-    let+ av =
-      Search.search test_db_config test_tenant
-        (Search.AV ("attr-1", Datom.S "attr-1-s"))
-    in
-    (a, av)
+    let search = Search.search test_db_config test_tenant in
+    let* a = search (Search.A "attr-1") in
+    let* av = search (Search.AV ("attr-1", Datom.S "attr-1-s")) in
+    let* ea = search (Search.EA ("JIFthagqSufOu2naackai", "attr-xx")) in
+    let+ consumed_capacity = Io.get_consumed_capacity in
+    (a, av, ea, consumed_capacity)
   in
   Io.run (io_state env) @@ io
 
