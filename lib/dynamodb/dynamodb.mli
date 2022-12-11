@@ -64,6 +64,18 @@ module Type : sig
 
   type request_items = (string * write_request list) list
 
+  type batch_get_item_request_item =
+    { consistent_read : bool option
+    ; expression_attribute_names : expression_attribute_names option
+    ; keys : prim_and_range_key list
+    }
+
+  type batch_get_item_request_items =
+    (string * batch_get_item_request_item) list
+
+  type batch_get_item_response_responses =
+    (string * string_attr_value_list list) list
+
   type return_values =
     | RETURN_VALUES_NONE
     | RETURN_VALUES_ALL_OLD
@@ -132,10 +144,16 @@ module Type : sig
     ; scanned_count : int
     }
 
-  type batch_write_item_request_raw = { request_items : request_items }
+  type batch_write_item_request_raw =
+    { request_items : request_items
+    ; return_consumed_capacity : return_consumed_capacity option
+    }
 
   val make_batch_write_item_request_raw :
-    request_items:request_items -> batch_write_item_request_raw
+       request_items:request_items
+    -> ?return_consumed_capacity:return_consumed_capacity
+    -> unit
+    -> batch_write_item_request_raw
 
   type batch_write_item_request_request_items =
     | Put of item list
@@ -145,7 +163,7 @@ module Type : sig
     (string * batch_write_item_request_request_items) list
 
   type batch_write_item_response =
-    { consumed_capacity : consumed_capacity option }
+    { consumed_capacity : consumed_capacity list option }
 
   type update_item_request =
     { table_name : string
@@ -175,12 +193,30 @@ module Type : sig
     ; consumed_capacity : consumed_capacity option
     }
 
+  type batch_get_item_request =
+    { request_items : batch_get_item_request_items
+    ; return_consumed_capacity : return_consumed_capacity option
+    }
+
+  val make_batch_get_item_request :
+       request_items:batch_get_item_request_items
+    -> ?return_consumed_capacity:return_consumed_capacity
+    -> unit
+    -> batch_get_item_request
+
+  type batch_get_item_response =
+    { consumed_capacity : consumed_capacity list option
+    ; responses : batch_get_item_response_responses
+    ; unprocessed_keys : batch_get_item_request_items
+    }
+
   type request =
     | List_tables
     | Get_item of get_item_request
     | Query of query_request
     | Batch_write_item of batch_write_item_request_raw
     | Update_item of update_item_request
+    | Batch_get_item of batch_get_item_request
 end
 
 module Api : sig
@@ -232,4 +268,10 @@ module Api : sig
     -> config'
     -> Type.update_item_request
     -> (Type.update_item_response, string) result
+
+  val batch_get_item :
+       Tls_eio.t
+    -> config'
+    -> Type.batch_get_item_request
+    -> (Type.batch_get_item_response, string) result
 end

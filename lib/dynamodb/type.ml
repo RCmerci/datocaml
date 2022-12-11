@@ -11,7 +11,26 @@ let attr_value_B_of_yojson yojson =
   | `String s -> Ok (Base64EncodedS s)
   | _ -> Error "attr_value_B_of_yojson"
 
-type string_attr_value_list = (string * attr_value) list
+type 'a assoc_list = (string * 'a) list [@@deriving yojson]
+
+let assoc_list_to_yojson a_to_yojson l =
+  `Assoc (List.map (fun (k, v) -> (k, a_to_yojson v)) l)
+
+let assoc_list_of_yojson a_of_yojson yojson =
+  match yojson with
+  | `Assoc l ->
+    List.fold_left
+      (fun acc (k, v) ->
+        match acc with
+        | Error _ -> acc
+        | Ok acc' -> (
+          match a_of_yojson v with
+          | Ok v' -> Ok ((k, v') :: acc')
+          | Error s -> Error s))
+      (Ok []) l
+  | _ -> Error "assoc_list_of_yojson"
+
+type string_attr_value_list = attr_value assoc_list
 
 and attr_value =
   | B of attr_value_B
@@ -25,10 +44,7 @@ and attr_value =
   | S of string
   | SS of string list
 
-let rec string_attr_value_list_to_yojson l =
-  `Assoc (List.map (fun (k, v) -> (k, attr_value_to_yojson v)) l)
-
-and attr_value_to_yojson v : Yojson.Safe.t =
+let rec attr_value_to_yojson v : Yojson.Safe.t =
   match v with
   | B v -> `Assoc [ ("B", attr_value_B_to_yojson v) ]
   | BOOL v -> `Assoc [ ("BOOL", [%to_yojson: bool] v) ]
@@ -40,21 +56,6 @@ and attr_value_to_yojson v : Yojson.Safe.t =
   | NULL v -> `Assoc [ ("NULL", [%to_yojson: bool] v) ]
   | S v -> `Assoc [ ("S", [%to_yojson: string] v) ]
   | SS v -> `Assoc [ ("SS", `List (List.map [%to_yojson: string] v)) ]
-
-let rec string_attr_value_list_of_yojson yojson =
-  let module X = Xlist.Fold_left_with_stop (struct
-    type t = (string_attr_value_list, string) result
-  end) in
-  match yojson with
-  | `Assoc l ->
-    X.fold_left_with_stop
-      (fun acc (k, v) ->
-        match (attr_value_of_yojson v, acc) with
-        | Ok v', Ok acc' -> Ok ((k, v') :: acc')
-        | Error s, _ -> X.stop (Error s)
-        | _ -> failwith "string_attr_value_list_of_yojson: unreachable")
-      (Ok []) l
-  | _ -> Error "string_attr_value_list_of_yojson"
 
 and attr_value_of_yojson yojson =
   match yojson with
@@ -139,6 +140,12 @@ and attr_value_of_yojson yojson =
     SS r
   | _ -> Error "attr_value_of_yojson"
 
+and string_attr_value_list_of_yojson yojson =
+  assoc_list_of_yojson attr_value_of_yojson yojson
+
+and string_attr_value_list_to_yojson yojson =
+  assoc_list_to_yojson attr_value_to_yojson yojson
+
 type prim_and_range_key =
   { primary_key : string * attr_value
   ; range_key : (string * attr_value) option
@@ -146,21 +153,19 @@ type prim_and_range_key =
 [@@deriving make]
 
 let prim_and_range_key_to_yojson { primary_key; range_key } : Yojson.Safe.t =
-  let primary_key_k, primary_key_v = primary_key in
-  let r =
-    match range_key with
-    | None -> []
-    | Some (k, v) -> [ (k, attr_value_to_yojson v) ]
-  in
-  let r = (primary_key_k, attr_value_to_yojson primary_key_v) :: r in
-  `Assoc r
+  string_attr_value_list_to_yojson @@ (primary_key :: Option.to_list range_key)
+
+let prim_and_range_key_of_yojson yojson =
+  let* r = string_attr_value_list_of_yojson yojson in
+  match r with
+  | [ kv ] -> Ok { primary_key = kv; range_key = None }
+  (* cannot figure out which one is range-key & primary-key *)
+  | [ kv1; kv2 ] -> Ok { primary_key = kv1; range_key = Some kv2 }
+  | _ -> Error "prim_and_range_key_of_yojson"
 
 type item = string_attr_value_list [@@deriving yojson]
 
-type expression_attribute_names = (string * string) list
-
-let expression_attribute_names_to_yojson l =
-  `Assoc (List.map (fun (k, v) -> (k, `String v)) l)
+type expression_attribute_names = string assoc_list [@@deriving yojson]
 
 type expression_attribute_values = string_attr_value_list [@@deriving yojson]
 
@@ -206,6 +211,43 @@ let request_items_to_yojson l =
        (fun (tablename, wrl) ->
          (tablename, `List (List.map [%to_yojson: write_request] wrl)))
        l)
+
+type batch_get_item_request_item =
+  { consistent_read : bool option [@key "ConsistentRead"]
+  ; expression_attribute_names : expression_attribute_names option
+        [@key "ExpressionAttributeNames"]
+  ; keys : prim_and_range_key list [@key "Keys"]
+  }
+[@@deriving yojson, make]
+
+type batch_get_item_request_items = batch_get_item_request_item assoc_list
+[@@deriving yojson]
+
+type batch_get_item_response_responses =
+  (string * string_attr_value_list list) list
+
+let batch_get_item_response_responses_of_yojson yojson =
+  let module X = Xlist.Fold_left_with_stop (struct
+    type t = ((string * string_attr_value_list list) list, string) result
+  end) in
+  match yojson with
+  | `Assoc l ->
+    X.fold_left_with_stop
+      (fun acc (tablename, items) ->
+        match (items, acc) with
+        | `List items', Ok acc' ->
+          let items'' =
+            List.map
+              (fun item ->
+                match string_attr_value_list_of_yojson item with
+                | Error e -> X.stop (Error e)
+                | Ok v -> v)
+              items'
+          in
+          Ok ((tablename, items'') :: acc')
+        | _, _ -> X.stop (Error "batch_get_item_response_responses_of_yojson"))
+      (Ok []) l
+  | _ -> Error "batch_get_item_response_responses_of_yojson"
 
 type return_values =
   | RETURN_VALUES_NONE
@@ -272,7 +314,10 @@ type query_response =
 [@@deriving of_yojson { strict = false }]
 
 type batch_write_item_request_raw =
-  { request_items : request_items [@key "RequestItems"] }
+  { request_items : request_items [@key "RequestItems"]
+  ; return_consumed_capacity : return_consumed_capacity option
+        [@key "ReturnConsumedCapacity"]
+  }
 [@@deriving to_yojson, make]
 
 type batch_write_item_request_request_items =
@@ -297,20 +342,22 @@ let batch_write_item_request_to_raw (v : batch_write_item_request) =
         ))
       v
   in
-  { request_items = r }
+  { request_items = r; return_consumed_capacity = Some TOTAL }
 
-let partition_batch_write_item_request_raw ?(n = 25) { request_items } :
+let partition_batch_write_item_request_raw ?(n = 25)
+    { request_items; return_consumed_capacity } :
     batch_write_item_request_raw list =
   List.flatten
   @@ List.map
        (fun (table, l) ->
          List.map
-           (fun l -> { request_items = [ (table, l) ] })
+           (fun l ->
+             { request_items = [ (table, l) ]; return_consumed_capacity })
            (Xlist.partition_all_by_n l n))
        request_items
 
 type batch_write_item_response =
-  { consumed_capacity : consumed_capacity option
+  { consumed_capacity : consumed_capacity list option
         [@key "ConsumedCapacity"] [@default None]
   }
 [@@deriving of_yojson { strict = false }]
@@ -338,12 +385,28 @@ type update_item_response =
   }
 [@@deriving of_yojson { strict = false }]
 
+type batch_get_item_request =
+  { request_items : batch_get_item_request_items [@key "RequestItems"]
+  ; return_consumed_capacity : return_consumed_capacity option
+        [@key "ReturnConsumedCapacity"]
+  }
+[@@deriving to_yojson, make]
+
+type batch_get_item_response =
+  { consumed_capacity : consumed_capacity list option
+        [@key "ConsumedCapacity"] [@default None]
+  ; responses : batch_get_item_response_responses [@key "Responses"]
+  ; unprocessed_keys : batch_get_item_request_items [@key "UnprocessedKeys"]
+  }
+[@@deriving of_yojson { strict = false }]
+
 type request =
   | List_tables
   | Get_item of get_item_request
   | Query of query_request
   | Batch_write_item of batch_write_item_request_raw
   | Update_item of update_item_request
+  | Batch_get_item of batch_get_item_request
 
 let request_to_yojson = function
   | List_tables -> `Assoc []
@@ -351,3 +414,4 @@ let request_to_yojson = function
   | Query v -> [%to_yojson: query_request] v
   | Batch_write_item v -> [%to_yojson: batch_write_item_request_raw] v
   | Update_item v -> [%to_yojson: update_item_request] v
+  | Batch_get_item v -> [%to_yojson: batch_get_item_request] v

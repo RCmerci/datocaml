@@ -143,13 +143,39 @@ let update_item conn config request =
   | Ok v -> Ok v
   | Error _ -> Error (Yojson.Safe.to_string json)
 
+let batch_get_item conn config request =
+  let json =
+    call_api conn config "DynamoDB_20120810.BatchGetItem"
+      (Type.Batch_get_item request)
+  in
+  match Type.batch_get_item_response_of_yojson json with
+  | Ok v -> Ok v
+  | Error s -> Error (Printf.sprintf "%s:%s" s (Yojson.Safe.to_string json))
+
 (* test *)
 
+let batch_get_item_request : Type.batch_get_item_request =
+  Type.make_batch_get_item_request
+    ~request_items:
+      [ ( "datocaml_1"
+        , Type.make_batch_get_item_request_item
+            ~keys:
+              [ Type.make_prim_and_range_key
+                  ~primary_key:
+                    ("tenant+e", Type.S "test_tenant#JIFthagqSufOu2naackai")
+                  ~range_key:("a", Type.S "attr-1") ()
+              ]
+            () )
+      ]
+    ~return_consumed_capacity:Type.TOTAL ()
+
+(* "test_tenant" "JIFthagqSufOu2naackai", "attr-1", S "attr-1-s" *)
 let get_item_request : Type.get_item_request =
   Type.make_get_item_request ~table_name:"datocaml_1"
     ~key:
-      (Type.make_prim_and_range_key ~primary_key:("tenant+e", Type.S "sss")
-         ~range_key:("a", Type.S "yyy") ())
+      (Type.make_prim_and_range_key
+         ~primary_key:("tenant+e", Type.S "test_tenant#JIFthagqSufOu2naackai")
+         (* ~range_key:("a", Type.S "yyy") *) ())
     ()
 
 let update_item_request : Type.update_item_request =
@@ -177,7 +203,8 @@ let batch_write_item_request : Type.batch_write_item_request =
   ]
 
 let batch_write_item_request_raw : Type.batch_write_item_request_raw =
-  { request_items =
+  Type.make_batch_write_item_request_raw
+    ~request_items:
       [ ( "file-sync-s3-object-metadata"
         , [ Delete_request
               { key =
@@ -187,7 +214,7 @@ let batch_write_item_request_raw : Type.batch_write_item_request_raw =
               }
           ] )
       ]
-  }
+    ()
 
 let query_request : Type.query_request =
   { table_name = "file-sync-s3-object-metadata"
