@@ -223,31 +223,8 @@ type batch_get_item_request_item =
 type batch_get_item_request_items = batch_get_item_request_item assoc_list
 [@@deriving yojson]
 
-type batch_get_item_response_responses =
-  (string * string_attr_value_list list) list
-
-let batch_get_item_response_responses_of_yojson yojson =
-  let module X = Xlist.Fold_left_with_stop (struct
-    type t = ((string * string_attr_value_list list) list, string) result
-  end) in
-  match yojson with
-  | `Assoc l ->
-    X.fold_left_with_stop
-      (fun acc (tablename, items) ->
-        match (items, acc) with
-        | `List items', Ok acc' ->
-          let items'' =
-            List.map
-              (fun item ->
-                match string_attr_value_list_of_yojson item with
-                | Error e -> X.stop (Error e)
-                | Ok v -> v)
-              items'
-          in
-          Ok ((tablename, items'') :: acc')
-        | _, _ -> X.stop (Error "batch_get_item_response_responses_of_yojson"))
-      (Ok []) l
-  | _ -> Error "batch_get_item_response_responses_of_yojson"
+type batch_get_item_response_responses = string_attr_value_list list assoc_list
+[@@deriving yojson]
 
 type return_values =
   | RETURN_VALUES_NONE
